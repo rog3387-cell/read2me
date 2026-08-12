@@ -1,0 +1,16 @@
+{
+  "name": "read2me",
+  "version": "1.0.0",
+  "description": "Upload a document (docx, pdf, md, txt, screenshot) or paste text - the app reads it aloud with the Soniox text-to-speech API.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mammoth": "^1.8.0",
+    "multer": "^1.4.5-lts.1",
+    "pdf-parse": "^2.1.1",
+    "tesseract.js": "^5.1.1"
+  }
+}

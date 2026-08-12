@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Read2Me</title>
+<style>
+  :root {
+    --bg: #f4f6fb; --card: #ffffff; --ink: #1c2333; --muted: #67718a;
+    --accent: #4f6df5; --accent-dark: #3b55d9; --ok: #1f9d55; --err: #d64545;
+    --border: #dfe4f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--ink);
+  }
+  header {
+    background: linear-gradient(120deg, #3b55d9, #6a5df5);
+    color: #fff; padding: 18px 24px;
+  }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: .3px; }
+  header p { margin: 4px 0 0; opacity: .85; font-size: 13px; }
+  main { max-width: 860px; margin: 24px auto 60px; padding: 0 16px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px; margin-bottom: 18px; box-shadow: 0 2px 10px rgba(28,35,51,.05);
+  }
+  .card h2 { margin: 0 0 12px; font-size: 15px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+  #keycard { display: none; border-color: #f0c36d; background: #fffaf0; }
+  #keycard input { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
+  .drop {
+    border: 2px dashed #b9c3e6; border-radius: 12px; padding: 34px 20px;
+    text-align: center; color: var(--muted); cursor: pointer; transition: .15s;
+    font-size: 15px;
+  }
+  .drop.over { border-color: var(--accent); background: #eef1ff; color: var(--accent); }
+  .drop b { color: var(--ink); }
+  .drop small { display: block; margin-top: 6px; font-size: 12px; }
+  textarea {
+    width: 100%; min-height: 140px; padding: 12px; border: 1px solid var(--border);
+    border-radius: 10px; font-size: 15px; font-family: inherit; resize: vertical;
+    line-height: 1.5;
+  }
+  textarea:focus { outline: 2px solid #c3cdfa; border-color: var(--accent); }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 14px; }
+  label.sel { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  select {
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; background: #fff; min-width: 120px;
+  }
+  button {
+    border: 0; border-radius: 10px; padding: 12px 22px; font-size: 15px;
+    cursor: pointer; font-weight: 600; transition: .15s;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  .primary { background: var(--accent); color: #fff; }
+  .primary:hover:not(:disabled) { background: var(--accent-dark); }
+  .ghost { background: #eef1f8; color: var(--ink); }
+  .ghost:hover:not(:disabled) { background: #e2e7f4; }
+  #status { font-size: 14px; color: var(--muted); min-height: 20px; margin-top: 10px; }
+  #status.err { color: var(--err); }
+  #status.ok { color: var(--ok); }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  #player { display: none; }
+  #progressbar { height: 6px; background: #e6eafa; border-radius: 3px; overflow: hidden; margin-top: 12px; }
+  #progressfill { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  .spin {
+    display: inline-block; width: 14px; height: 14px; border: 2px solid #c3cdfa;
+    border-top-color: var(--accent); border-radius: 50%; animation: sp 0.8s linear infinite;
+    vertical-align: -2px; margin-right: 6px;
+  }
+  @keyframes sp { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔊 Read2Me</h1>
+  <p>Upload a document or paste text — I'll read it to you.</p>
+</header>
+<main>
+
+  <div class="card" id="keycard">
+    <h2>One-time setup</h2>
+    <p style="margin:0 0 10px;font-size:14px">Paste your <b>Soniox API key</b>. It is saved on the server only (never in the browser or in git).</p>
+    <div class="row" style="margin-top:0">
+      <input type="password" id="keyinput" placeholder="Soniox API key" style="flex:1">
+      <button class="primary" id="keysave">Save key</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>1 · Your document</h2>
+    <div class="drop" id="drop">
+      <b>Drop a file here</b> or click to choose<br>
+      <small>DOCX · PDF · MD · TXT · screenshot (PNG/JPG)</small>
+    </div>
+    <input type="file" id="file" hidden accept=".docx,.pdf,.md,.markdown,.txt,image/*">
+    <div class="row">
+      <label class="sel">Screenshot language (OCR)
+        <select id="ocrlang">
+          <option value="en">English</option>
+          <option value="sq">Albanian</option>
+          <option value="sq+en">Albanian + English</option>
+        </select>
+      </label>
+      <span class="meta" style="align-self:flex-end">…or just paste text (or a screenshot) below ⌄</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2 · Text to read</h2>
+    <textarea id="text" placeholder="Paste or type text here — you can also paste a screenshot straight from the clipboard (Ctrl+V)."></textarea>
+    <div class="meta"><span id="charcount">0</span> characters</div>
+    <div class="row">
+      <label class="sel">Voice
+        <select id="voice"></select>
+      </label>
+      <label class="sel">Language
+        <select id="lang">
+          <option value="auto">Auto</option>
+          <option value="en">English</option>
+          <option value="sq">Albanian (Shqip)</option>
+          <option value="it">Italian</option>
+          <option value="de">German</option>
+          <option value="fr">French</option>
+          <option value="es">Spanish</option>
+        </select>
+      </label>
+      <label class="sel">Speed
+        <select id="speed">
+          <option value="0.75">0.75×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+          <option value="2">2×</option>
+        </select>
+      </label>
+    </div>
+    <div class="row">
+      <button class="primary" id="read">▶ Read to me</button>
+      <button class="ghost" id="pause" disabled>⏸ Pause</button>
+      <button class="ghost" id="stop" disabled>⏹ Stop</button>
+      <button class="ghost" id="download" disabled>⬇ Download MP3</button>
+    </div>
+    <div id="progressbar"><div id="progressfill"></div></div>
+    <div id="status"></div>
+    <audio id="player"></audio>
+  </div>
+
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const status = (msg, cls) => { const s = $('status'); s.innerHTML = msg; s.className = cls || ''; };
+
+// ---------- API key setup ----------
+async function checkKey() {
+  try {
+    const r = await fetch('/api/key/status').then(r => r.json());
+    $('keycard').style.display = r.configured ? 'none' : 'block';
+  } catch (e) {}
+}
+$('keysave').onclick = async () => {
+  const key = $('keyinput').value.trim();
+  if (!key) return;
+  const r = await fetch('/api/key', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key }),
+  });
+  if (r.ok) { $('keycard').style.display = 'none'; status('API key saved ✓', 'ok'); loadVoices(); }
+  else status('Could not save the key.', 'err');
+};
+
+// ---------- Voices ----------
+async function loadVoices() {
+  try {
+    const { voices } = await fetch('/api/voices').then(r => r.json());
+    $('voice').innerHTML = voices.map(v => `<option>${v}</option>`).join('');
+  } catch (e) {
+    $('voice').innerHTML = '<option>Adrian</option>';
+  }
+}
+
+// ---------- File upload / extraction ----------
+const drop = $('drop');
+drop.onclick = () => $('file').click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => {
+  e.preventDefault(); drop.classList.remove('over');
+  if (e.dataTransfer.files.length) extractFile(e.dataTransfer.files[0]);
+};
+$('file').onchange = e => { if (e.target.files.length) extractFile(e.target.files[0]); e.target.value = ''; };
+
+// Paste a screenshot straight into the textarea
+$('text').addEventListener('paste', e => {
+  for (const item of e.clipboardData.items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      extractFile(item.getAsFile(), 'screenshot');
+      return;
+    }
+  }
+});
+
+async function extractFile(file, label) {
+  stopAll();
+  status(`<span class="spin"></span>Reading ${label || file.name}…`);
+  const fd = new FormData();
+  fd.append('file', file, file.name || 'screenshot.png');
+  fd.append('ocrLang', $('ocrlang').value);
+  try {
+    const r = await fetch('/api/extract', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    $('text').value = data.text;
+    updateCount();
+    status(`Loaded ${label || file.name} ✓ — press “Read to me”.`, 'ok');
+  } catch (e) {
+    status(e.message, 'err');
+  }
+}
+
+const updateCount = () => { $('charcount').textContent = $('text').value.length; };
+$('text').addEventListener('input', updateCount);
+
+// ---------- Chunking ----------
+// Long texts are split at sentence ends into ~1200-character parts so the
+// first audio starts fast; parts are prefetched while the previous one plays.
+function chunkText(text, max = 1200) {
+  const clean = text.replace(/\s+\n/g, '\n').trim();
+  if (clean.length <= max) return [clean];
+  const sentences = clean.match(/[^.!?\n]+[.!?\n]*/g) || [clean];
+  const chunks = [];
+  let cur = '';
+  for (let s of sentences) {
+    if (cur && (cur.length + s.length) > max) { chunks.push(cur.trim()); cur = ''; }
+    while (s.length > max && !cur) { // one giant "sentence": hard-split
+      chunks.push(s.slice(0, max));
+      s = s.slice(max);
+    }
+    cur += s;
+  }
+  if (cur.trim()) chunks.push(cur.trim());
+  return chunks.filter(c => c.length);
+}
+
+// ---------- Playback ----------
+let chunks = [], blobs = [], playing = false, current = 0, fetchController = null;
+const player = $('player');
+
+function setButtons() {
+  $('read').disabled = playing;
+  $('pause').disabled = !playing;
+  $('stop').disabled = !playing;
+  $('download').disabled = !chunks.length;
+}
+
+function setProgress() {
+  $('progressfill').style.width = chunks.length ? Math.round((current / chunks.length) * 100) + '%' : '0';
+}
+
+async function fetchChunk(i) {
+  if (blobs[i]) return blobs[i];
+  const r = await fetch('/api/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal: fetchController.signal,
+    body: JSON.stringify({
+      text: chunks[i],
+      voice: $('voice').value,
+      language: $('lang').value,
+    }),
+  });
+  if (!r.ok) {
+    let msg = 'Text-to-speech failed.';
+    try { msg = (await r.json()).error || msg; } catch (e) {}
+    throw new Error(msg);
+  }
+  blobs[i] = await r.blob();
+  return blobs[i];
+}
+
+async function playFrom(i) {
+  if (i >= chunks.length) { finish(); return; }
+  current = i;
+  setProgress();
+  const total = chunks.length;
+  try {
+    if (!blobs[i]) status(`<span class="spin"></span>Preparing part ${i + 1} of ${total}…`);
+    const blob = await fetchChunk(i);
+    if (!playing) return;
+    status(total > 1 ? `Reading — part ${i + 1} of ${total}` : 'Reading…');
+    player.src = URL.createObjectURL(blob);
+    player.playbackRate = parseFloat($('speed').value);
+    await player.play();
+    if (i + 1 < total) fetchChunk(i + 1).catch(() => {}); // prefetch next part
+  } catch (e) {
+    if (e.name !== 'AbortError') { status(e.message, 'err'); stopAll(); }
+  }
+}
+
+player.onended = () => { if (playing) playFrom(current + 1); };
+$('speed').onchange = () => { player.playbackRate = parseFloat($('speed').value); };
+
+$('read').onclick = () => {
+  const text = $('text').value.trim();
+  if (!text) { status('Nothing to read — add some text first.', 'err'); return; }
+  stopAll(true);
+  chunks = chunkText(text);
+  blobs = new Array(chunks.length);
+  fetchController = new AbortController();
+  playing = true;
+  setButtons();
+  playFrom(0);
+};
+
+$('pause').onclick = () => {
+  if (player.paused) { player.play(); $('pause').textContent = '⏸ Pause'; }
+  else { player.pause(); $('pause').textContent = '▶ Resume'; }
+};
+
+$('stop').onclick = () => { stopAll(); status('Stopped.'); };
+
+function finish() {
+  playing = false;
+  current = chunks.length;
+  setProgress();
+  setButtons();
+  status('Done ✓', 'ok');
+  $('pause').textContent = '⏸ Pause';
+}
+
+function stopAll(silent) {
+  playing = false;
+  if (fetchController) fetchController.abort();
+  fetchController = null;
+  player.pause();
+  player.removeAttribute('src');
+  current = 0;
+  if (!silent) { chunks = []; blobs = []; }
+  setProgress();
+  setButtons();
+  $('pause').textContent = '⏸ Pause';
+}
+
+// ---------- Download MP3 ----------
+$('download').onclick = async () => {
+  if (!blobs.length) return;
+  // Make sure every part exists (fetch any that playback skipped).
+  fetchController = fetchController || new AbortController();
+  status('<span class="spin"></span>Preparing MP3…');
+  try {
+    for (let i = 0; i < chunks.length; i++) if (!blobs[i]) await fetchChunk(i);
+  } catch (e) { status(e.message, 'err'); return; }
+  const all = new Blob(blobs, { type: 'audio/mpeg' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(all);
+  a.download = 'read2me.mp3';
+  a.click();
+  status('MP3 downloaded ✓', 'ok');
+};
+
+checkKey();
+loadVoices();
+setButtons();
+</script>
+</body>
+</html>
