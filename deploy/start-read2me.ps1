@@ -9,13 +9,19 @@
 #     /TR "powershell -NoProfile -ExecutionPolicy Bypass -File C:\apps\read2me\deploy\start-read2me.ps1"
 #   schtasks /Run /TN "Read2Me"
 #
-# To update the app later: push to GitHub, then on the server stop only the
-# port-3020 process — the loop restarts it with the new code:
+# To update the app later: press "● Deploy latest version" at the bottom of
+# the Read2Me page (the app exits cleanly and this loop restarts it with the
+# new code). Fallback from the server itself — stop only the port-3020
+# process, the loop does the rest:
 #   Get-NetTCPConnection -LocalPort 3020 -State Listen |
 #     ForEach-Object { Stop-Process -Id $_.OwningProcess }
 
 $app = Split-Path $PSScriptRoot -Parent
 Set-Location $app
+
+# Tells the app it is safe to exit for a self-update (the in-app Deploy
+# button refuses when this is not set).
+$env:R2M_SUPERVISED = '1'
 
 while ($true) {
     git pull 2>&1 | Out-Null

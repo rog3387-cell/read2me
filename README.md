@@ -47,12 +47,28 @@ restart — every device has to log in again.
 restart of the node process. Register it once as a startup task — see the
 comments at the top of that script.
 
+**Updating later:** press **● Deploy latest version** at the bottom of the
+page (visible after login). The app pulls the latest code from GitHub and
+restarts itself — nothing else on the server is touched. The version shown
+next to the button is the live commit.
+
 ## Public access (https)
 
-The server's shared Caddy proxies `read2me.megadistribution.al` →
-`127.0.0.1:3020` (the block lives in the checklist repo's canonical
-`deploy/Caddyfile`). Needs a DNS record for the name pointing at the same
-server, and the app password set BEFORE the name goes live.
+Read2Me manages its own https name — `read2me.megadistribution.al` — with
+its own script. The server runs one shared Caddy for every app on the box;
+each app drops its own site file into `C:\caddy\sites\` and this app never
+edits the shared config beyond making sure the one `import` line exists.
+
+One-time, in an ADMINISTRATOR PowerShell from the app folder (after the DNS
+record for the name points at the server, and with the app password set):
+
+```
+powershell -ExecutionPolicy Bypass -File .\deploy\setup-domain.ps1
+```
+
+It installs `deploy/read2me.caddy` as `C:\caddy\sites\read2me.caddy`,
+validates the whole config, and restarts the Caddy service — rolling back
+and restarting nothing if validation fails.
 
 ## Notes
 

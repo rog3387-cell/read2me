@@ -316,6 +316,35 @@ app.post('/api/tts', requireAuth, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// In-app deploy: the supervising loop (deploy/start-read2me.ps1) git-pulls,
+// npm-installs and restarts node every time this process exits — so "deploy"
+// is simply a clean exit. The loop marks itself with R2M_SUPERVISED=1; when
+// that's absent (someone ran `node server.js` by hand) exiting would NOT come
+// back up, so the endpoint refuses instead of dying.
+// ---------------------------------------------------------------------------
+
+app.get('/api/deploy/version', requireAuth, (req, res) => {
+  const { execFile } = require('child_process');
+  execFile('git', ['log', '-1', '--format=%h|%cI|%s'], { cwd: __dirname }, (err, out) => {
+    if (err) return res.json({ commit: 'unknown', date: '', subject: '' });
+    const [commit, date, subject] = String(out).trim().split('|');
+    res.json({ commit, date, subject, supervised: process.env.R2M_SUPERVISED === '1' });
+  });
+});
+
+app.post('/api/deploy', requireAuth, (req, res) => {
+  if (process.env.R2M_SUPERVISED !== '1') {
+    return res.status(409).json({
+      error: 'The app is not running under its startup task, so it cannot restart itself. ' +
+             'On the server run:  schtasks /Run /TN "Read2Me"',
+    });
+  }
+  res.json({ ok: true });
+  console.log('Deploy requested — exiting so the startup loop pulls the latest code…');
+  setTimeout(() => process.exit(0), 500);
+});
+
 // A single bad request (e.g. a stray OCR worker error) must never take the
 // whole app down.
 process.on('uncaughtException', (e) => console.error('uncaught exception:', e));

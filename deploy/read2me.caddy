@@ -1,0 +1,6 @@
+# Read2Me's https name. Installed to C:\caddy\sites\read2me.caddy by
+# deploy\setup-domain.ps1; the server's shared Caddyfile imports every
+# *.caddy file in that folder, so this app never edits the shared config.
+read2me.megadistribution.al {
+    reverse_proxy 127.0.0.1:3020
+}

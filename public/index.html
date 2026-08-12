@@ -176,6 +176,12 @@
     <audio id="player"></audio>
   </div>
 
+  <div class="meta" id="deploybar" style="display:none;text-align:center;padding:6px 0 20px">
+    Version <code id="version">…</code>
+    <button class="ghost" id="deploy" style="padding:6px 14px;font-size:12px;margin-left:10px">● Deploy latest version</button>
+    <div id="deploystatus" style="margin-top:6px"></div>
+  </div>
+
 </main>
 <script>
 const $ = id => document.getElementById(id);
@@ -243,7 +249,42 @@ function startApp(session) {
   if (session) $('keycard').style.display = session.keyConfigured ? 'none' : 'block';
   else checkKey();
   loadVoices();
+  loadVersion();
 }
+
+// ---------- In-app deploy ----------
+async function loadVersion() {
+  try {
+    const v = await fetch('/api/deploy/version').then(r => r.json());
+    $('version').textContent = v.commit || 'unknown';
+    $('version').title = v.subject || '';
+    $('deploybar').style.display = 'block';
+  } catch (e) {}
+}
+
+$('deploy').onclick = async () => {
+  if (!confirm('Update Read2Me to the latest version from GitHub? Takes about a minute.')) return;
+  const ds = $('deploystatus');
+  try {
+    const r = await fetch('/api/deploy', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Deploy failed.');
+  } catch (e) {
+    if (e.message && e.message !== 'Failed to fetch') { ds.textContent = e.message; return; }
+  }
+  $('deploy').disabled = true;
+  ds.innerHTML = '<span class="spin"></span>Updating — the page reloads when the app is back…';
+  const before = $('version').textContent;
+  const t0 = Date.now();
+  const poll = setInterval(async () => {
+    try {
+      const v = await fetch('/api/deploy/version').then(r => r.json());
+      if (v.commit && v.commit !== before) { clearInterval(poll); location.reload(); }
+      if (v.commit === before && Date.now() - t0 > 20000) { clearInterval(poll); location.reload(); }
+    } catch (e) { /* still restarting */ }
+    if (Date.now() - t0 > 180000) { clearInterval(poll); ds.textContent = 'Still not back after 3 minutes — check the server.'; }
+  }, 3000);
+};
 
 // ---------- API key setup ----------
 async function checkKey() {
