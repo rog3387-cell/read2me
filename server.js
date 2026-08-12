@@ -9,6 +9,7 @@
 
 const express = require('express');
 const multer = require('multer');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -46,11 +47,82 @@ function getApiKey() {
   return process.env.SONIOX_API_KEY || readSecrets().sonioxApiKey || '';
 }
 
-app.get('/api/key/status', (req, res) => {
+// ---------------------------------------------------------------------------
+// Login (one shared app password, stored server-side in secrets.json)
+// ---------------------------------------------------------------------------
+
+function getAppPassword() {
+  return readSecrets().appPassword || '';
+}
+
+// The session cookie value is derived from the password, so changing the
+// password logs every device out.
+function authTokenFor(password) {
+  return crypto.createHmac('sha256', 'read2me-session').update(password).digest('hex');
+}
+
+function isAuthed(req) {
+  const pw = getAppPassword();
+  if (!pw) return false;
+  const cookie = (req.headers.cookie || '')
+    .split(';').map(s => s.trim()).find(s => s.startsWith('r2m='));
+  if (!cookie) return false;
+  const got = Buffer.from(cookie.slice(4));
+  const want = Buffer.from(authTokenFor(pw));
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+
+function setAuthCookie(res) {
+  res.setHeader('Set-Cookie',
+    `r2m=${authTokenFor(getAppPassword())}; HttpOnly; Path=/; Max-Age=2592000; SameSite=Lax`);
+}
+
+function requireAuth(req, res, next) {
+  if (isAuthed(req)) return next();
+  res.status(401).json({ error: 'Not logged in.' });
+}
+
+app.get('/api/session', (req, res) => {
+  res.json({
+    needsSetup: !getAppPassword(),
+    authenticated: isAuthed(req),
+    keyConfigured: !!getApiKey(),
+  });
+});
+
+// First run only: create the app password (refused once one exists).
+app.post('/api/setup', (req, res) => {
+  if (getAppPassword()) return res.status(403).json({ error: 'A password is already set.' });
+  const password = String(req.body.password || '');
+  if (password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters.' });
+  const secrets = readSecrets();
+  secrets.appPassword = password;
+  fs.writeFileSync(SECRETS_PATH, JSON.stringify(secrets, null, 2));
+  setAuthCookie(res);
+  res.json({ ok: true });
+});
+
+app.post('/api/login', (req, res) => {
+  const pw = getAppPassword();
+  const given = String(req.body.password || '');
+  const a = Buffer.from(given), b = Buffer.from(pw);
+  if (!pw || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ error: 'Wrong password.' });
+  }
+  setAuthCookie(res);
+  res.json({ ok: true });
+});
+
+app.post('/api/logout', (req, res) => {
+  res.setHeader('Set-Cookie', 'r2m=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax');
+  res.json({ ok: true });
+});
+
+app.get('/api/key/status', requireAuth, (req, res) => {
   res.json({ configured: !!getApiKey() });
 });
 
-app.post('/api/key', (req, res) => {
+app.post('/api/key', requireAuth, (req, res) => {
   const key = String(req.body.key || '').trim();
   if (!key) return res.status(400).json({ error: 'Empty key' });
   const secrets = readSecrets();
@@ -63,7 +135,7 @@ app.post('/api/key', (req, res) => {
 // Voices
 // ---------------------------------------------------------------------------
 
-app.get('/api/voices', async (req, res) => {
+app.get('/api/voices', requireAuth, async (req, res) => {
   const key = getApiKey();
   if (key) {
     try {
@@ -150,7 +222,7 @@ async function extractImage(buffer, lang) {
   return Promise.race([work, failed, timeout]);
 }
 
-app.post('/api/extract', upload.single('file'), async (req, res) => {
+app.post('/api/extract', requireAuth, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const name = (req.file.originalname || '').toLowerCase();
@@ -200,7 +272,7 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
 // Text-to-speech (proxies Soniox so the API key never reaches the browser)
 // ---------------------------------------------------------------------------
 
-app.post('/api/tts', async (req, res) => {
+app.post('/api/tts', requireAuth, async (req, res) => {
   try {
     const key = getApiKey();
     if (!key) return res.status(401).json({ error: 'Soniox API key is not configured yet.' });

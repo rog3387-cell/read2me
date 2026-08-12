@@ -31,11 +31,28 @@ node server.js
 
 Then open **http://localhost:3020**.
 
-First run: if no key is configured, the page shows a one-time setup box —
-paste the Soniox API key there and it is saved to `secrets.json`.
+First run: the page first asks you to **create the app password** (everyone
+uses this one password to open Read2Me — required because the app can be
+reachable from outside), then shows a one-time box for the **Soniox API key**.
+Both are saved to `secrets.json` (gitignored).
 (Or copy `secrets.example.json` to `secrets.json` and fill it in.)
 
 Change the port with the `PORT` environment variable if 3020 is taken.
+To change the app password later: edit `appPassword` in `secrets.json` and
+restart — every device has to log in again.
+
+## Run permanently on the Windows server
+
+`deploy/start-read2me.ps1` keeps the app running and auto-updates it on every
+restart of the node process. Register it once as a startup task — see the
+comments at the top of that script.
+
+## Public access (https)
+
+The server's shared Caddy proxies `read2me.megadistribution.al` →
+`127.0.0.1:3020` (the block lives in the checklist repo's canonical
+`deploy/Caddyfile`). Needs a DNS record for the name pointing at the same
+server, and the app password set BEFORE the name goes live.
 
 ## Notes
 

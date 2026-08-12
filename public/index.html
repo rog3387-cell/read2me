@@ -65,6 +65,22 @@
   #player { display: none; }
   #progressbar { height: 6px; background: #e6eafa; border-radius: 3px; overflow: hidden; margin-top: 12px; }
   #progressfill { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  #gate {
+    position: fixed; inset: 0; background: var(--bg); z-index: 10;
+    display: none; align-items: center; justify-content: center; padding: 16px;
+  }
+  #gate .card { width: 100%; max-width: 380px; }
+  #gate h2 { text-transform: none; letter-spacing: 0; font-size: 18px; color: var(--ink); }
+  #gate input {
+    width: 100%; padding: 11px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 15px; margin-bottom: 10px;
+  }
+  #gate .err { color: var(--err); font-size: 13px; min-height: 18px; margin: 4px 0 8px; }
+  #logout {
+    float: right; background: rgba(255,255,255,.15); color: #fff; font-size: 12px;
+    padding: 6px 12px; border-radius: 8px; font-weight: 500;
+  }
+  #logout:hover { background: rgba(255,255,255,.28); }
   .spin {
     display: inline-block; width: 14px; height: 14px; border: 2px solid #c3cdfa;
     border-top-color: var(--accent); border-radius: 50%; animation: sp 0.8s linear infinite;
@@ -75,9 +91,21 @@
 </head>
 <body>
 <header>
+  <button id="logout" style="display:none">Log out</button>
   <h1>🔊 Read2Me</h1>
   <p>Upload a document or paste text — I'll read it to you.</p>
 </header>
+
+<div id="gate">
+  <div class="card">
+    <h2 id="gatetitle">Log in</h2>
+    <p id="gatehint" style="font-size:14px;color:var(--muted);margin:0 0 12px"></p>
+    <input type="password" id="pw1" placeholder="Password">
+    <input type="password" id="pw2" placeholder="Repeat password" style="display:none">
+    <div class="err" id="gateerr"></div>
+    <button class="primary" id="gatebtn" style="width:100%">Log in</button>
+  </div>
+</div>
 <main>
 
   <div class="card" id="keycard">
@@ -152,6 +180,70 @@
 <script>
 const $ = id => document.getElementById(id);
 const status = (msg, cls) => { const s = $('status'); s.innerHTML = msg; s.className = cls || ''; };
+
+// ---------- Login gate ----------
+let gateMode = 'login';
+function showGate(mode) {
+  gateMode = mode;
+  $('gate').style.display = 'flex';
+  $('logout').style.display = 'none';
+  const setup = mode === 'setup';
+  $('gatetitle').textContent = setup ? 'Welcome — create a password' : 'Log in';
+  $('gatehint').textContent = setup
+    ? 'First time here: choose the password everyone will use to open Read2Me.'
+    : 'Enter the Read2Me password.';
+  $('pw2').style.display = setup ? 'block' : 'none';
+  $('gatebtn').textContent = setup ? 'Save password' : 'Log in';
+  $('gateerr').textContent = '';
+  $('pw1').focus();
+}
+
+$('gatebtn').onclick = async () => {
+  const pw = $('pw1').value;
+  if (gateMode === 'setup' && pw !== $('pw2').value) {
+    $('gateerr').textContent = 'The two passwords do not match.';
+    return;
+  }
+  try {
+    const r = await fetch(gateMode === 'setup' ? '/api/setup' : '/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed.');
+    $('gate').style.display = 'none';
+    $('pw1').value = $('pw2').value = '';
+    startApp();
+  } catch (e) {
+    $('gateerr').textContent = e.message;
+  }
+};
+['pw1', 'pw2'].forEach(id => $(id).addEventListener('keydown', e => {
+  if (e.key === 'Enter') $('gatebtn').click();
+}));
+
+$('logout').onclick = async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  location.reload();
+};
+
+async function init() {
+  try {
+    const s = await fetch('/api/session').then(r => r.json());
+    if (s.needsSetup) showGate('setup');
+    else if (!s.authenticated) showGate('login');
+    else startApp(s);
+  } catch (e) {
+    status('Cannot reach the server.', 'err');
+  }
+}
+
+function startApp(session) {
+  $('logout').style.display = 'block';
+  if (session) $('keycard').style.display = session.keyConfigured ? 'none' : 'block';
+  else checkKey();
+  loadVoices();
+}
 
 // ---------- API key setup ----------
 async function checkKey() {
@@ -361,8 +453,7 @@ $('download').onclick = async () => {
   status('MP3 downloaded ✓', 'ok');
 };
 
-checkKey();
-loadVoices();
+init();
 setButtons();
 </script>
 </body>
