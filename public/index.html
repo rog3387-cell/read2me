@@ -65,6 +65,12 @@
   #player { display: none; }
   #progressbar { height: 6px; background: #e6eafa; border-radius: 3px; overflow: hidden; margin-top: 12px; }
   #progressfill { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  .librow { display: flex; gap: 8px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
+  .librow:first-child { border-top: 0; }
+  .librow .info { flex: 1; min-width: 0; }
+  .librow .t { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .librow .m { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .librow button { padding: 7px 11px; font-size: 13px; white-space: nowrap; }
   #gate {
     position: fixed; inset: 0; background: var(--bg); z-index: 10;
     display: none; align-items: center; justify-content: center; padding: 16px;
@@ -175,6 +181,12 @@
     <audio id="player"></audio>
   </div>
 
+  <div class="card" id="librarycard" style="display:none">
+    <h2>3 · Library — already read, replaying is free</h2>
+    <audio id="libplayer" controls style="width:100%;display:none;margin-bottom:10px"></audio>
+    <div id="liblist"></div>
+  </div>
+
   <div class="meta" id="deploybar" style="display:none;text-align:center;padding:6px 0 20px">
     Version <code id="version">…</code>
     <button class="ghost" id="deploy" style="padding:6px 14px;font-size:12px;margin-left:10px">● Deploy latest version</button>
@@ -249,6 +261,7 @@ function startApp(session) {
   else checkKey();
   loadVoices();
   loadVersion();
+  loadLibraryList();
 }
 
 // ---------- In-app deploy ----------
@@ -390,6 +403,54 @@ function chunkText(text, max = 1200) {
   return chunks.filter(c => c.length);
 }
 
+// ---------- Library ----------
+let libItem = null;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB';
+const LANG_NAMES = { en: 'English', sq: 'Shqip', it: 'Italian', de: 'German', fr: 'French', es: 'Spanish' };
+
+async function loadLibraryList() {
+  try {
+    const { items } = await fetch('/api/library').then(r => r.json());
+    const card = $('librarycard');
+    if (!items || !items.length) { card.style.display = 'none'; return; }
+    card.style.display = 'block';
+    $('liblist').innerHTML = items.map(it => `
+      <div class="librow">
+        <div class="info">
+          <div class="t" title="${esc(it.snippet)}">${esc(it.title)}</div>
+          <div class="m">${new Date(it.created_at).toLocaleString()} · ${it.chars.toLocaleString()} chars ·
+            ${esc(it.voice)} · ${esc(LANG_NAMES[it.language] || it.language)}
+            ${it.complete ? '· ' + fmtSize(it.size) : '· ⚠ incomplete — read it to the end once'}</div>
+        </div>
+        ${it.complete ? `
+          <button class="ghost" onclick="libPlay('${it.id}')">▶ Play</button>
+          <button class="ghost" onclick="libDownload('${it.id}')">⬇ MP3</button>` : ''}
+        <button class="ghost" onclick="libDelete('${it.id}')" title="Delete">🗑</button>
+      </div>`).join('');
+  } catch (e) {}
+}
+
+function libPlay(id) {
+  stopAll();
+  const p = $('libplayer');
+  p.style.display = 'block';
+  p.src = `/api/library/${id}/audio`;
+  p.playbackRate = parseFloat($('speed').value);
+  p.play().catch(() => {});
+}
+
+function libDownload(id) {
+  location.href = `/api/library/${id}/audio?download=1`;
+}
+
+async function libDelete(id) {
+  if (!confirm('Delete this recording from the library?')) return;
+  await fetch(`/api/library/${id}`, { method: 'DELETE' });
+  loadLibraryList();
+}
+
 // ---------- Playback ----------
 let chunks = [], blobs = [], playing = false, current = 0, fetchController = null;
 const player = $('player');
@@ -415,6 +476,8 @@ async function fetchChunk(i) {
       text: chunks[i],
       voice: $('voice').value,
       language: $('lang').value,
+      itemId: libItem && libItem.id,
+      index: i,
     }),
   });
   if (!r.ok) {
@@ -446,15 +509,32 @@ async function playFrom(i) {
 }
 
 player.onended = () => { if (playing) playFrom(current + 1); };
-$('speed').onchange = () => { player.playbackRate = parseFloat($('speed').value); };
+$('speed').onchange = () => {
+  player.playbackRate = parseFloat($('speed').value);
+  $('libplayer').playbackRate = parseFloat($('speed').value);
+};
 
-$('read').onclick = () => {
+$('read').onclick = async () => {
   const text = $('text').value.trim();
   if (!text) { status('Nothing to read — add some text first.', 'err'); return; }
   stopAll(true);
   chunks = chunkText(text);
   blobs = new Array(chunks.length);
   fetchController = new AbortController();
+  // Register this read in the library; an identical earlier read is reused
+  // so replaying costs nothing.
+  libItem = null;
+  try {
+    const r = await fetch('/api/library/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text, parts: chunks.length,
+        voice: $('voice').value, language: $('lang').value,
+      }),
+    });
+    if (r.ok) libItem = await r.json();
+    if (libItem && libItem.cached) status('Found in the library — replaying at no cost ✓', 'ok');
+  } catch (e) { /* reading still works without the library */ }
   playing = true;
   setButtons();
   playFrom(0);
@@ -472,14 +552,16 @@ function finish() {
   current = chunks.length;
   setProgress();
   setButtons();
-  status('Done ✓', 'ok');
+  status('Done ✓ — saved in the library below.', 'ok');
   $('pause').textContent = '⏸ Pause';
+  loadLibraryList();
 }
 
 function stopAll(silent) {
   playing = false;
   if (fetchController) fetchController.abort();
   fetchController = null;
+  $('libplayer').pause();
   player.pause();
   player.removeAttribute('src');
   current = 0;
