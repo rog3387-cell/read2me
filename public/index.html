@@ -146,7 +146,6 @@
       </label>
       <label class="sel">Language
         <select id="lang">
-          <option value="auto">Auto</option>
           <option value="en">English</option>
           <option value="sq">Albanian (Shqip)</option>
           <option value="it">Italian</option>
@@ -312,7 +311,20 @@ async function loadVoices() {
   } catch (e) {
     $('voice').innerHTML = '<option>Adrian</option>';
   }
+  const savedVoice = localStorage.getItem('r2m_voice');
+  if (savedVoice && [...$('voice').options].some(o => o.value === savedVoice)) {
+    $('voice').value = savedVoice;
+  }
 }
+
+// Remember the last voice/language/speed choices on this device.
+const savedLang = localStorage.getItem('r2m_lang');
+if (savedLang && [...$('lang').options].some(o => o.value === savedLang)) $('lang').value = savedLang;
+const savedSpeed = localStorage.getItem('r2m_speed');
+if (savedSpeed && [...$('speed').options].some(o => o.value === savedSpeed)) $('speed').value = savedSpeed;
+$('voice').addEventListener('change', () => localStorage.setItem('r2m_voice', $('voice').value));
+$('lang').addEventListener('change', () => localStorage.setItem('r2m_lang', $('lang').value));
+$('speed').addEventListener('change', () => localStorage.setItem('r2m_speed', $('speed').value));
 
 // ---------- File upload / extraction ----------
 const drop = $('drop');

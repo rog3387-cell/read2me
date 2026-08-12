@@ -286,8 +286,10 @@ app.post('/api/tts', requireAuth, async (req, res) => {
       voice: String(req.body.voice || 'Adrian'),
       audio_format: 'mp3',
     };
-    const language = String(req.body.language || '').trim();
-    if (language && language !== 'auto') body.language = language;
+    // Soniox requires an explicit language — there is no auto-detect.
+    let language = String(req.body.language || '').trim();
+    if (!language || language === 'auto') language = 'en';
+    body.language = language;
 
     const r = await fetch(SONIOX_TTS_URL, {
       method: 'POST',
